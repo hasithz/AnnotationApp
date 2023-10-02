@@ -102,7 +102,7 @@ def label():
         data.append([video_name, frame_name, label])
 
     # Write the updated data back to the CSV file
-    with open(app.config['CSV_FILE'], mode='w', newline='') as csv_file:
+    with open(app.config['CSV_FILE'], mode='a', newline='') as csv_file:
         csv_writer = csv.writer(csv_file)
         csv_writer.writerows(data)
 
