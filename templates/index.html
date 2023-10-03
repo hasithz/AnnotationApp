@@ -80,7 +80,23 @@
     <script>
         var frameIndex = 0;
         var frameNames = {{ frame_names | tojson }};
+        let myArray = []; // Creates an empty array
+
+        function download_csv() {
+            var csv = 'Name,Title\n';
+            myArray.forEach(function(row) {
+                    csv += row.join(',');
+                    csv += "\n";
+            });
         
+            console.log(csv);
+            var hiddenElement = document.createElement('a');
+            hiddenElement.href = 'data:text/csv;charset=utf-8,' + encodeURI(csv);
+            hiddenElement.target = '_blank';
+            hiddenElement.download = 'people.csv';
+            hiddenElement.click();
+        }
+
         function loadFrame() {
             var frameCanvas = document.getElementById('frame_canvas');
             var frameName = frameNames[frameIndex];
@@ -131,7 +147,22 @@
         document.getElementById('label_frame_button').addEventListener('click', function () {
             // Create a FormData object from the label_form
             var formData = new FormData(document.getElementById('label_form'));
-            
+            if (formData.get('frame_label') == "") {
+                alert("Please select a label");
+                return;
+            }
+            // Add the frame name and label to the myArray
+            if (myArray.length == 0) {
+                myArray.push(["Name", "Title"]);
+            }
+            // Add only if the frame name is not already in the array
+            var frameNumber = frameNames[frameIndex].match(/\d+/)[0];
+            if (!myArray.some(e => e[0] === frameNumber)){
+                // Extract the number from the frame name
+
+                myArray.push([frameNumber, formData.get('frame_label')]);
+            }
+            // myArray.push([frameNames[frameIndex], formData.get('frame_label')]);
             // Send a POST request to the /label route with the form data
             var xhr = new XMLHttpRequest();
             xhr.onreadystatechange = function () {

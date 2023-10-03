@@ -1,6 +1,10 @@
 import os
+import time
 import cv2
 import csv
+import queue
+import threading
+
 from flask import Flask, render_template, request, redirect, url_for, send_file, jsonify
 
 app = Flask(__name__)
@@ -9,6 +13,9 @@ app.config['FRAME_FOLDER'] = 'frames'
 app.config['CSV_FOLDER'] = 'csv'  # New folder for CSV files
 app.config['VIDEO_FILE'] = ''
 app.config['FRAME_NAMES'] = []
+label_queue = queue.Queue()
+queue_lock = threading.Lock()
+
 
 @app.route('/')
 def index():
@@ -80,39 +87,59 @@ def get_frame():
 
 @app.route('/label', methods=['POST'])
 def label():
-    frame_index = int(request.form['frame_index'])
-    frame_name = app.config['FRAME_NAMES'][frame_index]
-    label = request.form['frame_label']
-    video_name = os.path.basename(app.config['VIDEO_FILE'])
-
-    # Check if the frame_name already exists in the CSV file
-    with open(app.config['CSV_FILE'], mode='r') as csv_file:
-        csv_reader = csv.reader(csv_file)
-        data = list(csv_reader)
-
-    frame_name_exists = False
-    for row in data:
-        if len(row) >= 2 and row[1] == frame_name:  # Check if row has at least 2 elements
-            row[2] = label  # Update the label in the existing row
-            frame_name_exists = True
-            break
-
-    # If frame_name doesn't exist, add a new row
-    if not frame_name_exists:
-        data.append([video_name, frame_name, label])
-
-    # Write the updated data back to the CSV file
-    with open(app.config['CSV_FILE'], mode='a', newline='') as csv_file:
-        csv_writer = csv.writer(csv_file)
-        csv_writer.writerows(data)
-
+    data = {
+        'frame_index': int(request.form['frame_index']),
+        'frame_label': request.form['frame_label']
+    }
+    label_queue.put(data)
     return redirect(url_for('index'))
+
 
 @app.route('/download_csv')
 def download_csv():
     return send_file(app.config['CSV_FILE'], as_attachment=True)
 
+
+def process_queue():
+    while True:
+        with queue_lock:
+            if not label_queue.empty():
+                data = label_queue.get()
+                
+                frame_index = data['frame_index']
+                frame_label = data['frame_label']
+                frame_name = app.config['FRAME_NAMES'][frame_index]
+                video_name = os.path.basename(app.config['VIDEO_FILE'])
+
+                # Check if the frame_name already exists in the CSV file
+                with open(app.config['CSV_FILE'], mode='r') as csv_file:
+                    csv_reader = csv.reader(csv_file)
+                    existing_data = list(csv_reader)
+
+                frame_name_exists = False
+                for row in existing_data:
+                    if len(row) >= 2 and row[1] == frame_name:  # Check if row has at least 2 elements
+                        row[2] = frame_label  # Update the label in the existing row
+                        frame_name_exists = True
+                        break
+
+                # If frame_name doesn't exist, add a new row
+                if not frame_name_exists:
+                    existing_data.append([video_name, frame_name, frame_label])
+
+                # Write the updated data back to the CSV file
+                with open(app.config['CSV_FILE'], mode='w', newline='') as csv_file:
+                    csv_writer = csv.writer(csv_file)
+                    csv_writer.writerows(existing_data)
+
+                # label_queue.task_done()
+
+# @app.route('/download_csv')
+# def download_csv():
+#     return send_file(app.config['CSV_FILE'], as_attachment=True)
+
 if __name__ == '__main__':
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
     os.makedirs(app.config['FRAME_FOLDER'], exist_ok=True)
+    threading.Thread(target=process_queue).start()
     app.run(debug=True)
